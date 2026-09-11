@@ -1,0 +1,168 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with plan details and current credit balance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "plan": { "type": "string", "enum": ["free", "pro", "creator"] },
+        "credits": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "email", "plan", "credits", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Cinematic filmmaking project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "aspectRatio": { "type": "string", "enum": ["16:9", "9:16", "1:1"] },
+        "resolution": { "type": "string", "enum": ["720p", "1080p", "4k"] },
+        "fps": { "type": "number" },
+        "duration": { "type": "number" },
+        "thumbnailUrl": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "aspectRatio", "createdAt"]
+    },
+    "Character": {
+      "title": "Character",
+      "description": "Reusable cinematic character with consistency views",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "appearance": { "type": "string" },
+        "age": { "type": "string" },
+        "hair": { "type": "string" },
+        "clothing": { "type": "string" },
+        "accessories": { "type": "string" },
+        "visualStyle": { "type": "string" },
+        "description": { "type": "string" },
+        "referenceImageUrl": { "type": "string" },
+        "consistencyStrength": { "type": "number" },
+        "referenceViews": { "type": "object" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "name", "createdAt"]
+    },
+    "Scene": {
+      "title": "Scene",
+      "description": "Filmmaking scene in a project storyboard",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "projectId": { "type": "string" },
+        "userId": { "type": "string" },
+        "sceneNumber": { "type": "number" },
+        "title": { "type": "string" },
+        "duration": { "type": "number" },
+        "visualPrompt": { "type": "string" },
+        "voiceOver": { "type": "string" },
+        "characters": { "type": "array" },
+        "location": { "type": "string" },
+        "camera": { "type": "string" },
+        "lighting": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "generating", "ready", "failed"] },
+        "videoUrl": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "projectId", "userId", "sceneNumber", "duration"]
+    },
+    "CreditTransaction": {
+      "title": "CreditTransaction",
+      "description": "Immutable ledger record of credit usage or grants",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["deduct", "grant", "refund", "bonus"] },
+        "description": { "type": "string" },
+        "generationId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "amount", "type", "description", "createdAt"]
+    },
+    "GenerationJob": {
+      "title": "GenerationJob",
+      "description": "Server-side asynchronous AI generation job tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "sceneId": { "type": "string" },
+        "type": { "type": "string", "enum": ["text-to-video", "image-to-video", "long-scene", "story-to-video", "voice", "image", "thumbnail", "mythology"] },
+        "status": { "type": "string", "enum": ["QUEUED", "PROCESSING", "GENERATING", "ASSEMBLING", "COMPLETED", "FAILED", "CANCELLED"] },
+        "progress": { "type": "number" },
+        "provider": { "type": "string" },
+        "providerJobId": { "type": "string" },
+        "resultUrl": { "type": "string" },
+        "error": { "type": "string" },
+        "metadata": { "type": "object" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "type", "status", "progress", "createdAt"]
+    },
+    "Asset": {
+      "title": "Asset",
+      "description": "Media asset stored in the project library",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "projectId": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["characters", "images", "videos", "audio", "music", "sfx", "voice", "thumbnails"] },
+        "url": { "type": "string" },
+        "size": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "name", "category", "url", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile with balance"
+    },
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "User film projects"
+    },
+    "/projects/{projectId}/scenes/{sceneId}": {
+      "schema": "Scene",
+      "description": "Scenes belonging to a project"
+    },
+    "/characters/{characterId}": {
+      "schema": "Character",
+      "description": "Global user character repository"
+    },
+    "/creditTransactions/{transactionId}": {
+      "schema": "CreditTransaction",
+      "description": "Immutable credit transaction ledger"
+    },
+    "/generations/{jobId}": {
+      "schema": "GenerationJob",
+      "description": "AI generation jobs"
+    },
+    "/assets/{assetId}": {
+      "schema": "Asset",
+      "description": "Project and user media assets"
+    }
+  }
+}
