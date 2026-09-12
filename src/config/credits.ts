@@ -1,7 +1,13 @@
 export const CREDIT_COSTS = {
-  IMAGE: 0,
-  THUMBNAIL: 0,
+  IMAGE: 1,
+  THUMBNAIL: 2,
   VOICE: 2,
+  VIDEO_10_SEC: 10,
+  VIDEO_20_SEC: 20,
+  VIDEO_30_SEC: 30,
+  VIDEO_60_SEC: 60,
+  VIDEO_120_SEC: 120,
+  // Backwards-compatible aliases
   VIDEO_10S: 10,
   VIDEO_20S: 20,
   VIDEO_30S: 30,
@@ -13,12 +19,11 @@ export const CREDIT_COSTS = {
 } as const;
 
 export function getVideoCreditCost(durationInSeconds: number): number {
-  if (durationInSeconds <= 10) return CREDIT_COSTS.VIDEO_10S;
-  if (durationInSeconds <= 20) return CREDIT_COSTS.VIDEO_20S;
-  if (durationInSeconds <= 30) return CREDIT_COSTS.VIDEO_30S;
-  if (durationInSeconds <= 60) return CREDIT_COSTS.VIDEO_60S;
-  if (durationInSeconds <= 90) return CREDIT_COSTS.VIDEO_90S;
-  return CREDIT_COSTS.VIDEO_120S;
+  if (durationInSeconds <= 10) return CREDIT_COSTS.VIDEO_10_SEC;
+  if (durationInSeconds <= 20) return CREDIT_COSTS.VIDEO_20_SEC;
+  if (durationInSeconds <= 30) return CREDIT_COSTS.VIDEO_30_SEC;
+  if (durationInSeconds <= 60) return CREDIT_COSTS.VIDEO_60_SEC;
+  return CREDIT_COSTS.VIDEO_120_SEC;
 }
 
 export interface PlanDetails {

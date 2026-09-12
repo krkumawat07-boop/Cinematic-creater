@@ -10,45 +10,61 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // User profile: user can read their profile, update basic info (cannot directly write credits)
+    function isDocOwner(docData) {
+      return isAuthenticated() && (docData.ownerId == request.auth.uid || docData.userId == request.auth.uid);
+    }
+
+    // User profile: user can read their profile, update display name/photo (cannot directly write or increase credits)
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && request.resource.data.credits == 100;
-      allow update: if isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits']));
+      allow update: if isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['credits', 'plan']));
       allow delete: if false;
     }
 
     // Projects: owned by the user
     match /projects/{projectId} {
-      allow read, write: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow read, write: if isAuthenticated() && (resource == null || isDocOwner(resource.data));
       
-      // Project Scenes
+      // Nested Project Scenes
       match /scenes/{sceneId} {
         allow read, write: if isAuthenticated() && (
-          get(/databases/$(database)/documents/projects/$(projectId)).data.userId == request.auth.uid
+          resource == null || 
+          isDocOwner(get(/databases/$(database)/documents/projects/$(projectId)).data)
         );
       }
     }
 
-    // Characters
-    match /characters/{characterId} {
-      allow read, write: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+    // Root-level Scenes
+    match /scenes/{sceneId} {
+      allow read, write: if isAuthenticated() && (resource == null || isDocOwner(resource.data));
     }
 
-    // Credit transactions: Read-only for owner, immutable
+    // Shots
+    match /shots/{shotId} {
+      allow read, write: if isAuthenticated() && (resource == null || isDocOwner(resource.data));
+    }
+
+    // Characters
+    match /characters/{characterId} {
+      allow read, write: if isAuthenticated() && (resource == null || isDocOwner(resource.data));
+    }
+
+    // Credit transactions: Read-only for owner, immutable, write strictly forbidden on client
     match /creditTransactions/{transactionId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
-      allow write: if false; // Only server writes credit transactions
+      allow read: if isAuthenticated() && (resource == null || isDocOwner(resource.data));
+      allow write: if false; // Sensitive credit operations only occur via server-side Admin SDK
     }
 
     // Generation jobs
     match /generations/{jobId} {
-      allow read, write: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow read, write: if isAuthenticated() && (resource == null || isDocOwner(resource.data));
     }
 
     // Assets
     match /assets/{assetId} {
-      allow read, write: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow read, write: if isAuthenticated() && (resource == null || isDocOwner(resource.data));
     }
   }
 }
+

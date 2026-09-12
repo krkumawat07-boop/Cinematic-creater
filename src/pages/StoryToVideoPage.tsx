@@ -12,17 +12,19 @@ import {
   MapPin, 
   Users 
 } from 'lucide-react';
-import { Project, StoryAnalysisResult } from '../types/index.js';
+import { Project, StoryAnalysisResult, Character } from '../types/index.js';
 import { api } from '../services/api.js';
 
 interface StoryToVideoPageProps {
   activeProject: Project | null;
+  characters?: Character[];
   onScenesAdded: () => void;
   onShowToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
 export const StoryToVideoPage: React.FC<StoryToVideoPageProps> = ({
   activeProject,
+  characters = [],
   onScenesAdded,
   onShowToast,
 }) => {
@@ -32,6 +34,7 @@ export const StoryToVideoPage: React.FC<StoryToVideoPageProps> = ({
   const [language, setLanguage] = useState<'English' | 'Hindi'>('English');
   const [durationSeconds, setDurationSeconds] = useState<number>(60);
   const [style, setStyle] = useState<string>('Cinematic Cyberpunk / Film Noir');
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string>('');
 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<StoryAnalysisResult | null>(null);
@@ -52,7 +55,8 @@ export const StoryToVideoPage: React.FC<StoryToVideoPageProps> = ({
       });
 
       setAnalysisResult(res.analysis);
-      onShowToast(`Story structured into ${res.analysis.scenes.length} cinematic scenes!`, 'success');
+      const sceneCount = (res.analysis?.scenes || []).length;
+      onShowToast(`Story structured into ${sceneCount} cinematic scenes!`, 'success');
     } catch (err: any) {
       onShowToast(err.message || 'Story breakdown failed', 'error');
     } finally {
@@ -65,24 +69,25 @@ export const StoryToVideoPage: React.FC<StoryToVideoPageProps> = ({
       onShowToast('Please select or create an active project first', 'error');
       return;
     }
-    if (!analysisResult) return;
+    const scenesToAdd = analysisResult?.scenes || [];
+    if (!scenesToAdd.length) return;
 
     try {
-      for (const sc of analysisResult.scenes) {
+      for (const sc of scenesToAdd) {
         await api.addScene(activeProject.id, {
           title: `Scene ${sc.sceneNumber}: ${sc.camera || 'Cinematic'}`,
-          duration: sc.duration,
-          visualPrompt: sc.visualPrompt,
-          camera: sc.camera,
-          lighting: 'Cinematic Atmosphere Match',
-          voiceOverText: sc.voiceOver,
+          duration: sc.duration || 10,
+          visualPrompt: sc.visualPrompt || '',
+          camera: sc.camera || 'Cinematic',
+          lighting: sc.lighting || 'Cinematic Atmosphere Match',
+          voiceOverText: sc.voiceOver || '',
           videoUrl: 'https://assets.mixkit.co/videos/preview/mixkit-nebula-in-deep-space-32008-large.mp4',
           thumbnailUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800&auto=format&fit=crop&q=80',
           status: 'ready'
         });
       }
       onScenesAdded();
-      onShowToast(`Added all ${analysisResult.scenes.length} scenes to ${activeProject.title}!`, 'success');
+      onShowToast(`Added all ${scenesToAdd.length} scenes to ${activeProject.title}!`, 'success');
     } catch (err: any) {
       onShowToast('Error adding scenes: ' + err.message, 'error');
     }
@@ -174,6 +179,27 @@ export const StoryToVideoPage: React.FC<StoryToVideoPageProps> = ({
           </div>
         </div>
 
+        {/* Character Anchor from Character Studio */}
+        {characters.length > 0 && (
+          <div className="pt-1">
+            <label className="text-[11px] text-zinc-400 block mb-1">
+              Link Anchor Character (Optional Continuity Lock)
+            </label>
+            <select
+              value={selectedCharacterId}
+              onChange={(e) => setSelectedCharacterId(e.target.value)}
+              className="w-full sm:w-80 rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-sky-500"
+            >
+              <option value="">None (Auto-generate characters from story)</option>
+              {characters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.visualStyle})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="pt-2">
           <button
             id="story-to-video-analyze-btn"
@@ -197,113 +223,123 @@ export const StoryToVideoPage: React.FC<StoryToVideoPageProps> = ({
       </div>
 
       {/* Analysis Results */}
-      {analysisResult && (
-        <div className="space-y-6">
-          {/* Top Banner Actions */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-sky-500/40 bg-sky-950/20">
-            <div>
-              <h2 className="text-base font-bold text-sky-300 font-cinematic">
-                {analysisResult.title}
-              </h2>
-              <p className="text-xs text-zinc-400 mt-0.5">
-                {analysisResult.scenes.length} Scenes • {analysisResult.characters.length} Key Characters • {analysisResult.locations.length} Locations
-              </p>
-            </div>
+      {analysisResult && (() => {
+        const scenes = Array.isArray(analysisResult.scenes) ? analysisResult.scenes : [];
+        const characters = Array.isArray(analysisResult.characters) ? analysisResult.characters : [];
+        const locations = Array.isArray(analysisResult.locations) ? analysisResult.locations : [];
 
-            <button
-              onClick={handleAddAllScenes}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md"
-            >
-              <BookmarkPlus className="w-4 h-4" />
-              <span>Import to Active Film Project</span>
-            </button>
-          </div>
-
-          {/* Characters & Locations Strip */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Characters */}
-            <div className="rounded-xl border border-zinc-800 bg-[#11121c] p-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2 mb-3">
-                <Users className="w-3.5 h-3.5 text-sky-400" />
-                Detected Characters ({analysisResult.characters.length})
-              </h3>
-              <div className="space-y-2">
-                {analysisResult.characters.map((c, i) => (
-                  <div key={i} className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs">
-                    <span className="font-bold text-white block">{c.name}</span>
-                    <span className="text-[11px] text-zinc-400">{c.description}</span>
-                  </div>
-                ))}
+        return (
+          <div className="space-y-6">
+            {/* Top Banner Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-sky-500/40 bg-sky-950/20">
+              <div>
+                <h2 className="text-base font-bold text-sky-300 font-cinematic">
+                  {analysisResult.title}
+                </h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  {scenes.length} Scenes • {characters.length} Key Characters • {locations.length} Locations
+                </p>
               </div>
+
+              <button
+                onClick={handleAddAllScenes}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md"
+              >
+                <BookmarkPlus className="w-4 h-4" />
+                <span>Import to Active Film Project</span>
+              </button>
             </div>
 
-            {/* Locations */}
-            <div className="rounded-xl border border-zinc-800 bg-[#11121c] p-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2 mb-3">
-                <MapPin className="w-3.5 h-3.5 text-sky-400" />
-                Cinematic Locations ({analysisResult.locations.length})
-              </h3>
-              <div className="space-y-2">
-                {analysisResult.locations.map((loc, i) => (
-                  <div key={i} className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs">
-                    <span className="font-bold text-white block">{loc.name}</span>
-                    <span className="text-[11px] text-zinc-400">{loc.environment}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Scenes Grid */}
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              Generated Scene Cards ({analysisResult.scenes.length})
-            </h3>
-
+            {/* Characters & Locations Strip */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {analysisResult.scenes.map((scene) => (
-                <div
-                  key={scene.sceneNumber}
-                  className="rounded-xl border border-zinc-800 bg-[#11121c] p-4 space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 font-mono text-[11px] font-bold">
-                      Scene {scene.sceneNumber} • {scene.duration}s
-                    </span>
-                    <span className="text-[11px] text-zinc-400 font-mono">{scene.camera}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block mb-1">
-                      Voiceover Narration
-                    </span>
-                    <p className="text-xs text-zinc-200 bg-zinc-900/90 p-2.5 rounded-lg border border-zinc-800">
-                      "{scene.voiceOver}"
-                    </p>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold mb-1">
-                      <span>AI VIDEO PROMPT</span>
-                      <button
-                        onClick={() => copyToClipboard(scene.visualPrompt, 'Prompt')}
-                        className="hover:text-sky-400 flex items-center gap-1"
-                      >
-                        <Copy className="w-3 h-3" />
-                        <span>Copy</span>
-                      </button>
+              {/* Characters */}
+              <div className="rounded-xl border border-zinc-800 bg-[#11121c] p-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2 mb-3">
+                  <Users className="w-3.5 h-3.5 text-sky-400" />
+                  Detected Characters ({characters.length})
+                </h3>
+                <div className="space-y-2">
+                  {characters.map((c: any, i: number) => (
+                    <div key={i} className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs">
+                      <span className="font-bold text-white block">{c.name}</span>
+                      <span className="text-[11px] text-zinc-400">{c.description}</span>
                     </div>
-                    <p className="text-[11px] font-mono text-zinc-300 bg-zinc-950 p-2.5 rounded-lg border border-zinc-900">
-                      {scene.visualPrompt}
-                    </p>
-                  </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              {/* Locations */}
+              <div className="rounded-xl border border-zinc-800 bg-[#11121c] p-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2 mb-3">
+                  <MapPin className="w-3.5 h-3.5 text-sky-400" />
+                  Cinematic Locations ({locations.length})
+                </h3>
+                <div className="space-y-2">
+                  {locations.map((loc: any, i: number) => {
+                    const locName = typeof loc === 'string' ? loc : loc?.name || `Location ${i + 1}`;
+                    const locEnv = typeof loc === 'string' ? '' : loc?.environment || loc?.description || '';
+                    return (
+                      <div key={i} className="p-2.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-xs">
+                        <span className="font-bold text-white block">{locName}</span>
+                        {locEnv && <span className="text-[11px] text-zinc-400">{locEnv}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Scenes Grid */}
+            <div className="space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5 text-sky-400" />
+                Generated Scene Cards ({scenes.length})
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {scenes.map((scene: any) => (
+                  <div
+                    key={scene.sceneNumber}
+                    className="rounded-xl border border-zinc-800 bg-[#11121c] p-4 space-y-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 font-mono text-[11px] font-bold">
+                        Scene {scene.sceneNumber} • {scene.duration}s
+                      </span>
+                      <span className="text-[11px] text-zinc-400 font-mono">{scene.camera}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block mb-1">
+                        Voiceover Narration
+                      </span>
+                      <p className="text-xs text-zinc-200 bg-zinc-900/90 p-2.5 rounded-lg border border-zinc-800">
+                        "{scene.voiceOver}"
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500 font-semibold mb-1">
+                        <span>AI VIDEO PROMPT</span>
+                        <button
+                          onClick={() => copyToClipboard(scene.visualPrompt, 'Prompt')}
+                          className="hover:text-sky-400 flex items-center gap-1"
+                        >
+                          <Copy className="w-3 h-3" />
+                          <span>Copy</span>
+                        </button>
+                      </div>
+                      <p className="text-[11px] font-mono text-zinc-300 bg-zinc-950 p-2.5 rounded-lg border border-zinc-900">
+                        {scene.visualPrompt}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

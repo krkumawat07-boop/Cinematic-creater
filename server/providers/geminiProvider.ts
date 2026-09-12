@@ -5,9 +5,49 @@ let aiClient: GoogleGenAI | null = null;
 
 function getGenAI(): GoogleGenAI | null {
   if (!aiClient && SERVER_CONFIG.GEMINI_API_KEY) {
-    aiClient = new GoogleGenAI({ apiKey: SERVER_CONFIG.GEMINI_API_KEY });
+    aiClient = new GoogleGenAI({
+      apiKey: SERVER_CONFIG.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   }
   return aiClient;
+}
+
+// Fallback chain for model availability
+const GEMINI_TEXT_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest'];
+
+async function generateWithGemini(prompt: string): Promise<any | null> {
+  const ai = getGenAI();
+  if (!ai) return null;
+
+  for (const model of GEMINI_TEXT_MODELS) {
+    try {
+      const responsePromise = ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Timeout with model ${model}`)), 3000)
+      );
+
+      const response = await Promise.race([responsePromise, timeoutPromise]);
+      const text = response.text || '';
+      if (text) {
+        return JSON.parse(text);
+      }
+    } catch (err: any) {
+      console.warn(`Gemini model ${model} skipped:`, err?.message || err);
+    }
+  }
+  return null;
 }
 
 export async function analyzeStoryToVideo(params: {
@@ -16,14 +56,10 @@ export async function analyzeStoryToVideo(params: {
   durationSeconds: number;
   style: string;
 }) {
-  const ai = getGenAI();
-
   // Target scene count based on duration (approx 8-10 seconds per scene)
   const targetScenes = Math.max(3, Math.round(params.durationSeconds / 10));
 
-  if (ai) {
-    try {
-      const prompt = `You are an elite Hollywood & Bollywood director and cinematographer.
+  const prompt = `You are an elite Hollywood & Bollywood director and cinematographer.
 Analyze the following story and convert it into a professional filmmaking storyboard specification for an AI video generation pipeline.
 
 Story text:
@@ -65,20 +101,25 @@ Return STRICTLY valid JSON with no markdown backticks, conforming to:
   ]
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        }
-      });
-
-      const text = response.text || '{}';
-      const parsed = JSON.parse(text);
-      return parsed;
-    } catch (err) {
-      console.warn('Gemini story analysis failed, using fallback engine:', err);
-    }
+  const parsed = await generateWithGemini(prompt);
+  if (parsed && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+    return {
+      title: parsed.title || 'Cinematic Film',
+      storyStructure: parsed.storyStructure || { act1: '', act2: '', act3: '' },
+      characters: Array.isArray(parsed.characters) ? parsed.characters : [],
+      locations: Array.isArray(parsed.locations) ? parsed.locations : [],
+      scenes: parsed.scenes.map((sc: any, i: number) => ({
+        sceneNumber: sc.sceneNumber ?? (i + 1),
+        title: sc.title || `Shot ${i + 1}`,
+        duration: sc.duration || Math.round(params.durationSeconds / targetScenes),
+        visualPrompt: sc.visualPrompt || '',
+        voiceOver: sc.voiceOver || '',
+        characters: Array.isArray(sc.characters) ? sc.characters : [],
+        location: sc.location || '',
+        camera: sc.camera || 'Wide Cinematic',
+        lighting: sc.lighting || 'Cinematic Ambient'
+      }))
+    };
   }
 
   // Fallback intelligent generator
@@ -122,12 +163,97 @@ Return STRICTLY valid JSON with no markdown backticks, conforming to:
   };
 }
 
+function normalizeMythologyResult(data: any, sceneCount: number, sceneDuration: number, topic: string) {
+  const scenesRaw = Array.isArray(data.scenes) && data.scenes.length > 0
+    ? data.scenes
+    : (Array.isArray(data.sceneStructure) && data.sceneStructure.length > 0 ? data.sceneStructure : []);
+
+  const normalizedScenes = (scenesRaw.length > 0 ? scenesRaw : Array.from({ length: sceneCount })).map((sc: any, idx: number) => {
+    const scNum = sc?.sceneNumber ?? (idx + 1);
+    const cam = sc?.cameraAngle || sc?.camera || (idx === 0 ? 'Slow Majestic Dolly-In towards Kailash' : 'Orbital 360 degree tracking shot with rising embers');
+    const narration = sc?.hindiVoiceover || sc?.hindiNarration || `दृश्य ${scNum}: ब्रह्मांड की गहराइयों से एक अलौकिक शक्ति का संचार होता है।`;
+    const prompt = sc?.visualPrompt || `Cinematic Indian mythology scene ${scNum}: Divine atmosphere, ancient temple pillars, swirling celestial nebula, golden volumetric light shafts, anamorphic 70mm, transcendent realism, masterwork.`;
+    
+    return {
+      sceneNumber: scNum,
+      title: sc?.title || `चरण ${scNum}: दिव्य अनुभूति`,
+      duration: sc?.duration || sceneDuration,
+      visualPrompt: prompt,
+      camera: cam,
+      cameraAngle: cam,
+      lighting: sc?.lighting || 'Celestial golden light piercing dark storm clouds, ethereal cyan rim light',
+      hindiNarration: narration,
+      hindiVoiceover: narration,
+      musicSuggestion: sc?.musicSuggestion || 'Deep meditative tanpura drone transitioning into thunderous pakhavaj and resonant conch (shankh)',
+      sfxSuggestion: sc?.sfxSuggestion || 'Distant cosmic rumble, wind whispering Vedic hymns, sacred bell reverberation',
+      videoUrl: sc?.videoUrl || 'https://assets.mixkit.co/videos/preview/mixkit-nebula-in-deep-space-32008-large.mp4',
+      thumbnailUrl: sc?.thumbnailUrl || 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=800&auto=format&fit=crop&q=80',
+    };
+  });
+
+  const musicSuggestions = Array.isArray(data.musicSuggestions) && data.musicSuggestions.length > 0
+    ? data.musicSuggestions
+    : [
+        'Traditional Rudra Veena with resonant cinematic sub-bass',
+        'War Shankh (conch) blast combined with tribal dhak and damru',
+        'Ethereal Sanskrit choir chanting Shiva Tandava Stotram'
+      ];
+
+  const sfxSuggestions = Array.isArray(data.sfxSuggestions) && data.sfxSuggestions.length > 0
+    ? data.sfxSuggestions
+    : [
+        'Cosmic energy hum (Om frequency 432Hz)',
+        'Thunderous Trishul strike reverberating through valleys',
+        'Sacred river Ganga cascading down heavenly realm'
+      ];
+
+  const musicSuggestion = data.musicSuggestion || musicSuggestions.join(' • ');
+  const soundEffects = data.soundEffects || sfxSuggestions.join(' • ');
+
+  return {
+    title: data.title || `🔱 ${topic}: ब्रह्मांडीय गाथा`,
+    story: data.story || 'यह कथा सनातन धर्म के अनंत सत्य और ब्रह्मांडीय शक्तियों के संतुलन को दर्शाती है।',
+    characters: Array.isArray(data.characters) && data.characters.length > 0 ? data.characters : [
+      {
+        name: 'महादेव शिव',
+        role: 'सृष्टि, स्थिति और संहार के अधिपति',
+        appearance: 'जटाओं में बहती गंगा, मस्तक पर बालचंद्र, नीलकंठ, त्रिशूल और डमरू धारण किए हुए, भस्म रमित शरीर, अलौकिक नीली कांति',
+        visualPrompt: 'Lord Shiva in deep cosmic meditation, glowing blue divine aura, sacred ashes bhasma, trident trishul, crescent moon in matted locks, Himalayan snow peaks background, cinematic 8k, photorealistic spiritual aesthetic'
+      },
+      {
+        name: 'नंदी',
+        role: 'महादेव के अनन्य भक्त और वाहन',
+        appearance: 'श्वेत दिव्य वृषभ, स्वर्ण घंटियों से सुशोभित',
+        visualPrompt: 'Divine white bull Nandi, adorned with golden ornaments and bells, seated reverently before Mount Kailash, cinematic volumetric light'
+      }
+    ],
+    characterSheets: Array.isArray(data.characterSheets) && data.characterSheets.length > 0 ? data.characterSheets : [
+      {
+        characterName: 'महादेव शिव',
+        traits: 'तृतीय नेत्र की ज्वाला, शांत मुखमंडल, अनंत करुणा और संहारक शक्ति',
+        promptSheet: 'Character turnaround sheet: Lord Shiva, front view, 3/4 view, side profile, close-up of third eye emitting soft divine glow, sacred rudraksha beads, ultra detailed 3D render'
+      }
+    ],
+    cinematicPrompts: Array.isArray(data.cinematicPrompts) && data.cinematicPrompts.length > 0 ? data.cinematicPrompts : [
+      'Epic Hindu mythology cinematic shot: Mount Kailash shrouded in swirling cosmic galaxies, Lord Shiva standing with Trishul, thunder and divine light rays, 8k resolution, IMAX ratio',
+      'Macro close-up: Damru vibrating with cosmic vibrations creating ripples across the fabric of spacetime, glowing Sanskrit mantras floating, hyper-detailed'
+    ],
+    hindiVoiceover: data.hindiVoiceover || 'न आदि, न अंत... जो शून्य भी है और अनंत भी! जब काल की गति थम जाती है, तब गूंजती है डमरू की वो नाद, जो पूरे ब्रह्मांड को जीवन और संहार का सत्य सिखाती है। हर हर महादेव!',
+    scenes: normalizedScenes,
+    sceneStructure: normalizedScenes,
+    musicSuggestions,
+    musicSuggestion,
+    sfxSuggestions,
+    soundEffects,
+    thumbnailPrompt: data.thumbnailPrompt || 'YouTube thumbnail 16:9: Glowing blue divine face of Lord Shiva with blazing third eye, glowing gold trishul, dramatic contrast, fiery sparks, bold cinematic title space, ultra high clickthrough rate style',
+    thumbnailUrl: data.thumbnailUrl || 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=800&auto=format&fit=crop&q=80'
+  };
+}
+
 export async function generateMythologyContent(params: {
   topic: string;
   preset: string; // e.g. '7 × 10-second Short' | '1-minute video' | '2-minute video' | '5-minute video'
 }) {
-  const ai = getGenAI();
-
   let sceneCount = 7;
   let sceneDuration = 10;
   if (params.preset.includes('1-minute')) {
@@ -141,9 +267,7 @@ export async function generateMythologyContent(params: {
     sceneDuration = 30;
   }
 
-  if (ai) {
-    try {
-      const prompt = `You are a legendary Indian mythology filmmaker and Sanskrit scholar.
+  const prompt = `You are a legendary Indian mythology filmmaker and Sanskrit scholar.
 Create an epic cinematic video production package for Hindi mythology content creators based on the following topic.
 Topic: "${params.topic}"
 Format preset: "${params.preset}" (${sceneCount} scenes, approx ${sceneDuration}s each)
@@ -173,14 +297,16 @@ Return STRICTLY valid JSON with no markdown formatting:
     "Detailed English image/video generation prompt with camera, lighting, 8k epic fantasy Hindu mythology aesthetic"
   ],
   "hindiVoiceover": "Full dramatic, thunderous, and goosebumps-inducing Hindi narration script",
-  "sceneStructure": [
+  "scenes": [
     {
       "sceneNumber": 1,
       "title": "Scene name in Hindi",
       "duration": ${sceneDuration},
       "visualPrompt": "Cinematic prompt in English with camera lens, lighting, divine aura, particles, IMAX 70mm aesthetic",
       "hindiNarration": "Poetic Hindi voiceover line for this scene",
+      "hindiVoiceover": "Poetic Hindi voiceover line for this scene",
       "camera": "Camera shot and motion",
+      "cameraAngle": "Camera shot and motion",
       "lighting": "Celestial golden glow, divine lightning, deep celestial blue",
       "musicSuggestion": "Thunderous damru rhythms, ancient Sanskrit chant chorus, resonant shankh",
       "sfxSuggestion": "Cosmic rumble, divine bell resonance, crackling celestial energy"
@@ -191,24 +317,14 @@ Return STRICTLY valid JSON with no markdown formatting:
   "thumbnailPrompt": "Viral YouTube thumbnail prompt in English with high contrast, glowing divine eyes, bold composition"
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        }
-      });
-
-      const text = response.text || '{}';
-      return JSON.parse(text);
-    } catch (err) {
-      console.warn('Gemini mythology generation failed, using curated generator:', err);
-    }
+  const geminiData = await generateWithGemini(prompt);
+  if (geminiData) {
+    return normalizeMythologyResult(geminiData, sceneCount, sceneDuration, params.topic);
   }
 
   // Curated epic Indian Mythology generation
   const topic = params.topic || 'भगवान शिव का दिव्य तांडव';
-  return {
+  const fallbackRaw = {
     title: `🔱 ${topic}: ब्रह्मांडीय गाथा`,
     story: `यह कथा सनातन धर्म के अनंत सत्य और ब्रह्मांडीय शक्तियों के संतुलन को दर्शाती है। जब अंधकार का विस्तार होता है, तब दिव्य चेतना सत्य की पुनर्स्थापना के लिए प्रकट होती है।`,
     characters: [
@@ -237,13 +353,15 @@ Return STRICTLY valid JSON with no markdown formatting:
       'Macro close-up: Damru vibrating with cosmic vibrations creating ripples across the fabric of spacetime, glowing Sanskrit mantras floating, hyper-detailed'
     ],
     hindiVoiceover: `न आदि, न अंत... जो शून्य भी है और अनंत भी! जब काल की गति थम जाती है, तब गूंजती है डमरू की वो नाद, जो पूरे ब्रह्मांड को जीवन और संहार का सत्य सिखाती है। हर हर महादेव!`,
-    sceneStructure: Array.from({ length: sceneCount }).map((_, idx) => ({
+    scenes: Array.from({ length: sceneCount }).map((_, idx) => ({
       sceneNumber: idx + 1,
       title: `चरण ${idx + 1}: दिव्य अनुभूति`,
       duration: sceneDuration,
       visualPrompt: `Cinematic Indian mythology scene ${idx + 1}: Divine atmosphere, ancient temple pillars, swirling celestial nebula, golden volumetric light shafts, anamorphic 70mm, transcendent realism, masterwork.`,
       hindiNarration: `दृश्य ${idx + 1}: ब्रह्मांड की गहराइयों से एक अलौकिक शक्ति का संचार होता है।`,
+      hindiVoiceover: `दृश्य ${idx + 1}: ब्रह्मांड की गहराइयों से एक अलौकिक शक्ति का संचार होता है।`,
       camera: idx === 0 ? 'Slow Majestic Dolly-In towards Kailash' : 'Orbital 360 degree tracking shot with rising embers',
+      cameraAngle: idx === 0 ? 'Slow Majestic Dolly-In towards Kailash' : 'Orbital 360 degree tracking shot with rising embers',
       lighting: 'Celestial golden light piercing dark storm clouds, ethereal cyan rim light',
       musicSuggestion: 'Deep meditative tanpura drone transitioning into thunderous pakhavaj and resonant conch (shankh)',
       sfxSuggestion: 'Distant cosmic rumble, wind whispering Vedic hymns, sacred bell reverberation'
@@ -260,4 +378,7 @@ Return STRICTLY valid JSON with no markdown formatting:
     ],
     thumbnailPrompt: 'YouTube thumbnail 16:9: Glowing blue divine face of Lord Shiva with blazing third eye, glowing gold trishul, dramatic contrast, fiery sparks, bold cinematic title space, ultra high clickthrough rate style'
   };
+
+  return normalizeMythologyResult(fallbackRaw, sceneCount, sceneDuration, topic);
 }
+

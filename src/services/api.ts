@@ -11,18 +11,30 @@ import {
 } from '../types/index.js';
 
 class ApiService {
-  private userId: string = 'user_krkumawat';
+  private userId: string = 'user';
+  private authToken: string | null = null;
 
   setUserId(id: string) {
     this.userId = id;
   }
 
+  setAuthToken(token: string | null) {
+    this.authToken = token;
+  }
+
+  getAuthToken(): string | null {
+    return this.authToken;
+  }
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const headers = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'x-user-id': this.userId,
-      ...options.headers,
+      ...((options.headers as Record<string, string>) || {}),
     };
+
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
 
     const res = await fetch(endpoint, { ...options, headers });
     
@@ -234,8 +246,67 @@ class ApiService {
     return this.request<{ job: GenerationJob }>(`/api/jobs/${id}`);
   }
 
+  async retryJob(id: string): Promise<{ job: GenerationJob }> {
+    return this.request<{ job: GenerationJob }>(`/api/jobs/${id}/retry`, {
+      method: 'POST'
+    });
+  }
+
+  async extendVideo(previousJobId: string, prompt?: string): Promise<{ job: GenerationJob; cost: number }> {
+    return this.request<{ job: GenerationJob; cost: number }>('/api/generate/video/extend', {
+      method: 'POST',
+      body: JSON.stringify({ previousJobId, prompt })
+    });
+  }
+
   async getRecentGenerations(): Promise<{ jobs: GenerationJob[] }> {
     return this.request<{ jobs: GenerationJob[] }>('/api/generations/recent');
+  }
+
+  // Phase 3: Shot level controls & Long Scene orchestration
+  async generateShot(jobId: string, shotId: string): Promise<{ job: GenerationJob }> {
+    return this.request<{ job: GenerationJob }>(`/api/jobs/${jobId}/shots/${shotId}/generate`, {
+      method: 'POST'
+    });
+  }
+
+  async retryShot(jobId: string, shotId: string, prompt?: string): Promise<{ job: GenerationJob }> {
+    return this.request<{ job: GenerationJob }>(`/api/jobs/${jobId}/shots/${shotId}/retry`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    });
+  }
+
+  async editShot(jobId: string, shotId: string, updates: { prompt?: string; camera?: string; environment?: string }): Promise<{ job: GenerationJob }> {
+    return this.request<{ job: GenerationJob }>(`/api/jobs/${jobId}/shots/${shotId}/edit`, {
+      method: 'POST',
+      body: JSON.stringify(updates)
+    });
+  }
+
+  async resumeLongScene(jobId: string): Promise<{ job: GenerationJob }> {
+    return this.request<{ job: GenerationJob }>(`/api/jobs/${jobId}/resume`, {
+      method: 'POST'
+    });
+  }
+
+  async assembleLongScene(jobId: string, options?: { audioTracks?: any; subtitles?: any }): Promise<{ assembledVideoUrl: string; duration: number; job: GenerationJob }> {
+    return this.request<{ assembledVideoUrl: string; duration: number; job: GenerationJob }>(`/api/jobs/${jobId}/assemble`, {
+      method: 'POST',
+      body: JSON.stringify(options || {})
+    });
+  }
+
+  // Voice Consistency & Project Voice
+  async getProjectVoice(projectId: string): Promise<{ defaultVoice: any }> {
+    return this.request<{ defaultVoice: any }>(`/api/projects/${projectId}/voice`);
+  }
+
+  async setProjectVoice(projectId: string, voiceSettings: any): Promise<{ success: boolean; project: any }> {
+    return this.request<{ success: boolean; project: any }>(`/api/projects/${projectId}/voice`, {
+      method: 'POST',
+      body: JSON.stringify(voiceSettings)
+    });
   }
 
   // Timeline & Export

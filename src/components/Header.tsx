@@ -21,6 +21,7 @@ interface HeaderProps {
   onOpenCredits: () => void;
   onOpenNewProject: () => void;
   onSwitchUser: () => void;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCredits,
   onOpenNewProject,
   onSwitchUser,
+  onLogout,
 }) => {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -179,15 +181,21 @@ export const Header: React.FC<HeaderProps> = ({
           {showUserDropdown && (
             <div className="absolute right-0 mt-2 w-56 bg-[#141520] border border-zinc-700/80 rounded-xl shadow-2xl py-2 z-50">
               <div className="px-3.5 py-2 border-b border-zinc-800">
-                <p className="text-xs font-semibold text-white truncate">{user?.displayName}</p>
+                <p className="text-xs font-semibold text-white truncate">{user?.displayName || 'Cinematic Creator'}</p>
                 <p className="text-[11px] text-zinc-400 truncate">{user?.email}</p>
-                <span className="inline-block mt-1 text-[10px] font-medium uppercase px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
-                  Role: {user?.role || 'user'}
-                </span>
+                <div className="flex items-center gap-1.5 mt-1.5">
+                  <span className="inline-block text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-indigo-950/70 border border-indigo-700/50 text-indigo-300">
+                    Plan: {user?.plan || 'free'}
+                  </span>
+                  <span className="inline-block text-[10px] font-mono text-zinc-500">
+                    ID: {user?.id ? `${user.id.substring(0, 6)}...` : ''}
+                  </span>
+                </div>
               </div>
               
               <div className="py-1">
                 <button
+                  id="header-credit-ledger-btn"
                   onClick={() => {
                     setShowUserDropdown(false);
                     onOpenCredits();
@@ -197,16 +205,19 @@ export const Header: React.FC<HeaderProps> = ({
                   <Coins className="w-3.5 h-3.5 text-amber-400" />
                   <span>Credit Ledger & Plans</span>
                 </button>
-                <button
-                  onClick={() => {
-                    setShowUserDropdown(false);
-                    onSwitchUser();
-                  }}
-                  className="w-full text-left px-3.5 py-2 text-xs text-zinc-300 hover:text-white hover:bg-zinc-800/60 flex items-center gap-2"
-                >
-                  <User className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Switch / Reset Demo Account</span>
-                </button>
+                {onLogout && (
+                  <button
+                    id="header-logout-btn"
+                    onClick={() => {
+                      setShowUserDropdown(false);
+                      onLogout();
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/30 flex items-center gap-2 border-t border-zinc-800/80 mt-1"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-red-400" />
+                    <span>Sign Out</span>
+                  </button>
+                )}
               </div>
             </div>
           )}

@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { Clapperboard } from 'lucide-react';
+import { AuthProvider, useAuth } from './context/AuthContext.js';
+import { AuthPage } from './pages/AuthPage.js';
 import { Header } from './components/Header.js';
 import { Sidebar, NavTab } from './components/Sidebar.js';
 import { ToastContainer, ToastItem } from './components/Toast.js';
@@ -24,7 +27,9 @@ import { AdminHubPage } from './pages/AdminHubPage.js';
 import { Project, Scene, Character, Asset, GenerationJob, UserProfile } from './types/index.js';
 import { api } from './services/api.js';
 
-export default function App() {
+function MainStudioApp() {
+  const { firebaseUser, user: authUser, loading: authLoading, logout, refreshProfile } = useAuth();
+
   // Navigation State
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -58,6 +63,13 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Sync authUser to user state
+  useEffect(() => {
+    if (authUser) {
+      setUser(authUser);
+    }
+  }, [authUser]);
+
   // Initial Data Fetching
   const loadInitialData = async () => {
     try {
@@ -82,7 +94,7 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Initialization error:', err);
-      showToast('Error loading server data: ' + err.message, 'error');
+      showToast('Error loading user studio data: ' + err.message, 'error');
     }
   };
 
@@ -128,6 +140,7 @@ export default function App() {
 
   const refreshUser = async () => {
     try {
+      await refreshProfile();
       const res = await api.getProfile();
       setUser(res.user);
     } catch (err) {
@@ -136,8 +149,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    if (firebaseUser) {
+      loadInitialData();
+    }
+  }, [firebaseUser?.uid]);
 
   // When activeProject changes, load its scenes
   const handleSelectProject = (proj: Project) => {
@@ -203,16 +218,25 @@ export default function App() {
     }
   };
 
-  const handleSwitchUserAccount = async (email: string, name: string) => {
-    try {
-      const res = await api.loginDemo(email, name);
-      setUser(res.user);
-      setShowSwitchUserModal(false);
-      showToast(`Logged in as ${name}`, 'success');
-    } catch (err: any) {
-      showToast('Failed to switch: ' + err.message, 'error');
-    }
-  };
+  // If waiting for Firebase authentication state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen w-full bg-[#08090f] flex flex-col items-center justify-center text-zinc-300">
+        <div className="w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center animate-pulse mb-4 shadow-xl shadow-indigo-600/20">
+          <Clapperboard className="w-7 h-7 text-indigo-400" />
+        </div>
+        <p className="text-sm font-semibold font-cinematic tracking-wider text-zinc-300">
+          CineForge AI Studio
+        </p>
+        <p className="text-xs text-zinc-500 mt-1">Connecting to Firebase & Cloud Firestore...</p>
+      </div>
+    );
+  }
+
+  // Enforce authentication gate
+  if (!firebaseUser) {
+    return <AuthPage />;
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-100 flex flex-col selection:bg-indigo-500 selection:text-white font-sans antialiased">
@@ -225,6 +249,7 @@ export default function App() {
         onOpenCredits={() => setActiveTab('credits')}
         onOpenNewProject={() => setShowNewProjectModal(true)}
         onSwitchUser={() => setShowSwitchUserModal(true)}
+        onLogout={logout}
       />
 
       {/* Main Studio Frame */}
@@ -302,6 +327,7 @@ export default function App() {
           {activeTab === 'story-to-video' && (
             <StoryToVideoPage
               activeProject={activeProject}
+              characters={characters}
               onScenesAdded={() => {
                 if (activeProject) loadProjectScenes(activeProject.id);
                 refreshProjects();
@@ -345,7 +371,14 @@ export default function App() {
           )}
 
           {activeTab === 'voice-studio' && (
-            <VoiceStudioPage onShowToast={showToast} />
+            <VoiceStudioPage 
+              activeProject={activeProject}
+              onVoiceAddedToTimeline={() => {
+                if (activeProject) loadProjectScenes(activeProject.id);
+                refreshProjects();
+              }}
+              onShowToast={showToast} 
+            />
           )}
 
           {activeTab === 'image-studio' && (
@@ -374,7 +407,7 @@ export default function App() {
               user={user}
               onResetDemo={() => {
                 loadInitialData();
-                showToast('Demo environment re-seeded!', 'success');
+                showToast('Studio environment refreshed!', 'success');
               }}
               onShowToast={showToast}
             />
@@ -400,6 +433,7 @@ export default function App() {
             <div>
               <label className="text-[11px] text-zinc-400 block mb-1">Film Title</label>
               <input
+                id="new-film-title-input"
                 type="text"
                 value={newProjectTitle}
                 onChange={(e) => setNewProjectTitle(e.target.value)}
@@ -411,6 +445,7 @@ export default function App() {
             <div>
               <label className="text-[11px] text-zinc-400 block mb-1">Aspect Ratio</label>
               <select
+                id="new-film-aspect-select"
                 value={newProjectAspect}
                 onChange={(e) => setNewProjectAspect(e.target.value as any)}
                 className="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs text-zinc-200 focus:outline-none"
@@ -423,12 +458,14 @@ export default function App() {
 
             <div className="flex justify-end gap-2 pt-2 border-t border-zinc-800">
               <button
+                id="new-film-cancel-btn"
                 onClick={() => setShowNewProjectModal(false)}
                 className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-medium"
               >
                 Cancel
               </button>
               <button
+                id="new-film-create-btn"
                 onClick={handleCreateNewProject}
                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-semibold shadow-md"
               >
@@ -439,44 +476,49 @@ export default function App() {
         </div>
       )}
 
-      {/* Switch User Modal */}
+      {/* User Account / Sign Out Modal */}
       {showSwitchUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
           <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-[#141520] p-6 space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white font-cinematic">
-              Switch / Demo Account
+              Creator Account
             </h3>
             <p className="text-xs text-zinc-400">
-              Select or simulate account credentials for testing permissions and credit limits.
+              Current authenticated session via Firebase Authentication.
             </p>
 
-            <div className="space-y-2">
-              <button
-                onClick={() => handleSwitchUserAccount('krkumawat07@gmail.com', 'Creator K.R. (Admin)')}
-                className="w-full p-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-left flex items-center justify-between text-xs"
-              >
-                <div>
-                  <span className="font-bold text-white block">Creator K.R.</span>
-                  <span className="text-zinc-400 text-[11px]">krkumawat07@gmail.com • Admin (Free)</span>
-                </div>
-                <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-700/50 text-[10px]">
-                  Current
-                </span>
-              </button>
-
-              <button
-                onClick={() => handleSwitchUserAccount('director_sharma@studio.ai', 'Director Sharma (Pro)')}
-                className="w-full p-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-left flex items-center justify-between text-xs"
-              >
-                <div>
-                  <span className="font-bold text-white block">Director Sharma</span>
-                  <span className="text-zinc-400 text-[11px]">director_sharma@studio.ai • Pro Tier</span>
-                </div>
-              </button>
+            <div className="p-3.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-zinc-400">Email:</span>
+                <span className="font-semibold text-white">{firebaseUser.email || 'Anonymous'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-400">UID:</span>
+                <span className="font-mono text-zinc-400 text-[11px]">{firebaseUser.uid}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-400">Plan:</span>
+                <span className="uppercase text-indigo-400 font-semibold">{user?.plan || 'free'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-zinc-400">Credits:</span>
+                <span className="text-amber-400 font-bold">{user?.credits ?? 100}</span>
+              </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-zinc-800">
+            <div className="flex justify-between gap-2 pt-2 border-t border-zinc-800">
               <button
+                id="switch-modal-signout-btn"
+                onClick={async () => {
+                  setShowSwitchUserModal(false);
+                  await logout();
+                }}
+                className="px-4 py-2 rounded-xl bg-red-950/70 hover:bg-red-900/80 border border-red-800/80 text-red-300 text-xs font-semibold"
+              >
+                Sign Out
+              </button>
+              <button
+                id="switch-modal-close-btn"
                 onClick={() => setShowSwitchUserModal(false)}
                 className="px-4 py-2 rounded-xl bg-zinc-800 text-zinc-300 text-xs"
               >
@@ -487,5 +529,13 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <MainStudioApp />
+    </AuthProvider>
   );
 }

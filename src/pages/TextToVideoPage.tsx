@@ -128,10 +128,21 @@ export const TextToVideoPage: React.FC<TextToVideoPageProps> = ({
   // Generation Job State
   const [activeJob, setActiveJob] = useState<GenerationJob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExtending, setIsExtending] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [lastGeneratedPrompt, setLastGeneratedPrompt] = useState<string>('');
+  const [providerInfo, setProviderInfo] = useState<string>('AI Video Provider');
 
   const creditCost = getVideoCreditCost(duration);
+
+  // Check health and provider on mount
+  useEffect(() => {
+    api.getHealth().then(res => {
+      if (res?.providers?.video) {
+        setProviderInfo(res.providers.video);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Poll active generation job
   useEffect(() => {
@@ -154,6 +165,35 @@ export const TextToVideoPage: React.FC<TextToVideoPageProps> = ({
     }
     return () => clearInterval(timer);
   }, [activeJob]);
+
+  const handleRetry = async () => {
+    if (!activeJob) return;
+    setIsSubmitting(true);
+    try {
+      const res = await api.retryJob(activeJob.id);
+      setActiveJob(res.job);
+      onShowToast('Retrying video generation...', 'info');
+    } catch (err: any) {
+      onShowToast(err.message || 'Retry failed', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleExtend = async () => {
+    if (!activeJob) return;
+    setIsExtending(true);
+    try {
+      const res = await api.extendVideo(activeJob.id, 'Continue the scene with matching cinematic camera and lighting');
+      setActiveJob(res.job);
+      setVideoUrl(null);
+      onShowToast('Extending video by +7s (10 credits reserved)', 'info');
+    } catch (err: any) {
+      onShowToast(err.message || 'Failed to extend video', 'error');
+    } finally {
+      setIsExtending(false);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -228,8 +268,12 @@ export const TextToVideoPage: React.FC<TextToVideoPageProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-white font-cinematic">Text to Video Studio</h1>
-            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-700/50">
-              Mock/Demo Provider Active
+            <span className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
+              providerInfo.includes('Veo') || providerInfo.includes('AI Engine')
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/50'
+                : 'bg-indigo-950/80 text-indigo-300 border-indigo-700/50'
+            }`}>
+              {providerInfo}
             </span>
           </div>
           <p className="text-xs text-zinc-400 mt-1">
@@ -613,7 +657,37 @@ export const TextToVideoPage: React.FC<TextToVideoPageProps> = ({
                     loop
                     className="w-full h-full object-cover"
                   />
-                ) : activeJob && activeJob.status !== 'COMPLETED' && activeJob.status !== 'FAILED' ? (
+                ) : activeJob && activeJob.status === 'FAILED' ? (
+                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-3 max-w-md">
+                    <div className="w-12 h-12 rounded-full bg-rose-950/80 border border-rose-600/40 flex items-center justify-center text-rose-400">
+                      <AlertCircle className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-rose-300 uppercase tracking-wider">
+                        Generation Failed
+                      </p>
+                      <p className="text-[11px] text-zinc-400 mt-1 line-clamp-3">
+                        {activeJob.error || 'The video engine encountered an error.'}
+                      </p>
+                      <p className="text-[10px] text-emerald-400 font-mono mt-1">
+                        ✓ Credits automatically refunded
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleRetry}
+                      disabled={isSubmitting}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-semibold border border-zinc-700 transition-colors"
+                    >
+                      {isSubmitting ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )}
+                      <span>Retry Generation</span>
+                    </button>
+                  </div>
+                ) : activeJob && activeJob.status !== 'COMPLETED' ? (
                   <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
                     <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
                     <div>
@@ -621,7 +695,10 @@ export const TextToVideoPage: React.FC<TextToVideoPageProps> = ({
                         {activeJob.status} ({activeJob.progress}%)
                       </p>
                       <p className="text-[11px] text-zinc-400 mt-1">
-                        Mock Provider simulating video neural render...
+                        {activeJob.status === 'QUEUED' && 'Establishing neural rendering pipeline...'}
+                        {activeJob.status === 'PROCESSING' && 'Synthesizing scene cinematography and lighting...'}
+                        {activeJob.status === 'GENERATING' && 'Generating high-fidelity frames with Veo model...'}
+                        {activeJob.status === 'ASSEMBLING' && 'Encoding final cinematic MP4 video stream...'}
                       </p>
                     </div>
 
@@ -638,30 +715,46 @@ export const TextToVideoPage: React.FC<TextToVideoPageProps> = ({
                     <Video className="w-12 h-12 stroke-[1.2] text-zinc-600" />
                     <p className="text-xs">Click "Generate Video" to begin AI rendering</p>
                     <span className="text-[10px] text-zinc-600 font-mono">
-                      Estimated generation time: ~5 seconds (Mock Mode)
+                      {providerInfo.includes('Veo') ? 'High Quality Google Veo AI Engine' : 'Fast Demo Mode Active'}
                     </span>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Output Meta & Download Bar */}
+            {/* Output Meta, Extend & Download Bar */}
             {videoUrl && (
-              <div className="mt-4 pt-4 border-t border-zinc-800/80 flex items-center justify-between text-xs">
+              <div className="mt-4 pt-4 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span className="text-zinc-400 font-mono truncate max-w-[200px]">
                   {duration}s • {resolution}
                 </span>
 
-                <a
-                  href={videoUrl}
-                  download="cinematic_clip.mp4"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download MP4</span>
-                </a>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleExtend}
+                    disabled={isExtending}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-950/80 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/50 text-xs font-medium transition-colors disabled:opacity-50"
+                    title="Extend scene by +7 seconds using video continuation"
+                  >
+                    {isExtending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    <span>Extend (+7s)</span>
+                  </button>
+
+                  <a
+                    href={videoUrl}
+                    download="cinematic_clip.mp4"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download MP4</span>
+                  </a>
+                </div>
               </div>
             )}
           </div>
